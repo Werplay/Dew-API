@@ -1,33 +1,33 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { ObjectId } from 'mongodb';
-import { AbiItem } from 'web3-utils';
-import { ContractInterface, ethers, Wallet } from 'ethers';
-import Moralis from 'moralis';
-import { EvmChain } from '@moralisweb3/common-evm-utils';
-import { SigningService } from '../services/signing.service';
-import { EthHelper } from '../services/eth.helper';
-import { AuthService } from '../auth/auth.service';
+import { Injectable, HttpException, HttpStatus } from "@nestjs/common";
+import { ObjectId } from "mongodb";
+import { AbiItem } from "web3-utils";
+import { ContractInterface, ethers, Wallet } from "ethers";
+import Moralis from "moralis";
+import { EvmChain } from "@moralisweb3/common-evm-utils";
+import { SigningService } from "../services/signing.service";
+import { EthHelper } from "../services/eth.helper";
+import { AuthService } from "../auth/auth.service";
 
-import wallets from 'src/models/wallets';
-import cohorts from 'src/models/cohorts';
-import users from 'src/models/users';
+import wallets from "src/models/wallets";
+import cohorts from "src/models/cohorts";
+import users from "src/models/users";
 
-import { configService } from '../config/configuration';
-import { contractAbi } from '../config/abi';
-import { cohortAbi } from '../config/cohort.abi';
-import { add } from 'lodash';
+import { configService } from "../config/configuration";
+import { contractAbi } from "../config/abi";
+import { cohortAbi } from "../config/cohort.abi";
+import { add } from "lodash";
 
-const axios = require('axios');
-const _ = require('lodash');
-const crypto = require('crypto');
+const axios = require("axios");
+const _ = require("lodash");
+const crypto = require("crypto");
 
-const mongoose = require('mongoose');
-const Web3Utils = require('web3-utils');
+const mongoose = require("mongoose");
+const Web3Utils = require("web3-utils");
 
-const TOKEN_ADDRESS = configService.getValue('TOKEN_ADDRESS');
-const COHORT_ADDRESS = configService.getValue('COHORT_ADDRESS');
+const TOKEN_ADDRESS = configService.getValue("TOKEN_ADDRESS");
+const COHORT_ADDRESS = configService.getValue("COHORT_ADDRESS");
 
-const rpcUrl = configService.getValue('RPC');
+const rpcUrl = configService.getValue("RPC");
 const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
 const AddressZero: string = ethers.constants.AddressZero;
 const chain = EvmChain.MUMBAI;
@@ -52,30 +52,30 @@ export class APIservice {
   constructor(
     private signinService: SigningService,
     private readonly ethHelper: EthHelper,
-    private authService: AuthService,
+    private authService: AuthService
   ) {}
 
   public async updateNames() {
     await this.connectToMongo();
-    await cohorts.find().updateMany({ adminName: 'admin' }).lean();
+    await cohorts.find().updateMany({ adminName: "admin" }).lean();
   }
 
   public async signin(provider: string, address: string) {
     try {
       await this.connectToMongo();
-      if (provider == 'metamask' || provider == 'coinbase') {
+      if (provider == "metamask" || provider == "coinbase") {
         const res = await this._signin(address, provider);
         return res;
       } else {
         throw new HttpException(
-          'Wallet provider is not supported yet, please contact administrator!',
-          HttpStatus.UNPROCESSABLE_ENTITY,
+          "Wallet provider is not supported yet, please contact administrator!",
+          HttpStatus.UNPROCESSABLE_ENTITY
         );
       }
     } catch (e) {
       throw new HttpException(
-        'Wallet provider is not supported yet, please contact administrator!',
-        HttpStatus.UNPROCESSABLE_ENTITY,
+        "Wallet provider is not supported yet, please contact administrator!",
+        HttpStatus.UNPROCESSABLE_ENTITY
       );
     }
   }
@@ -87,31 +87,31 @@ export class APIservice {
       const returningUser = false;
       return { returningUser, nonce, arbitaryCode };
     } catch (e) {
-      console.error('_signin database Error :', e);
-      throw new HttpException('_signin error', HttpStatus.UNPROCESSABLE_ENTITY);
+      console.error("_signin database Error :", e);
+      throw new HttpException("_signin error", HttpStatus.UNPROCESSABLE_ENTITY);
     }
   }
   public async verifySignature(signature: string, nonce: string) {
     try {
       await this.connectToMongo();
       const signingRequst = await this.signinService.getSigningRequestByNonce(
-        nonce,
+        nonce
       );
 
       if (!signingRequst) {
-        throw new HttpException('invalid signin request', HttpStatus.FORBIDDEN);
+        throw new HttpException("invalid signin request", HttpStatus.FORBIDDEN);
       }
       const address = signingRequst.address;
       const validSignature = await this.ethHelper.isValidMessageHash(
         signature,
         address,
-        nonce,
+        nonce
       );
 
       if (validSignature == false) {
         throw new HttpException(
-          'validSignature is false',
-          HttpStatus.FORBIDDEN,
+          "validSignature is false",
+          HttpStatus.FORBIDDEN
         );
       }
 
@@ -141,7 +141,7 @@ export class APIservice {
       console.error(e);
       throw new HttpException(
         `verifySignature call failed`,
-        HttpStatus.FORBIDDEN,
+        HttpStatus.FORBIDDEN
       );
     }
   }
@@ -153,20 +153,20 @@ export class APIservice {
       const tr = (await cohorts.count()) - 1;
       const mongoResult = await cohorts
         .find({})
-        .select(['-_id'])
-        .sort({ blockLastSynced: 'desc' })
+        .select(["-_id"])
+        .sort({ blockLastSynced: "desc" })
         .lean();
 
       const now = new Date();
 
-      if (_.size(mongoResult) == 0) {
-        this.refreshCohorts();
-      } else if (
-        mongoResult[0]?.blockLastSynced + 10 <
-        Math.floor(now.getTime() / 1000)
-      ) {
-        this.refreshCohorts();
-      }
+      // if (_.size(mongoResult) == 0) {
+      //   this.refreshCohorts();
+      // } else if (
+      //   mongoResult[0]?.blockLastSynced + 10 <
+      //   Math.floor(now.getTime() / 1000)
+      // ) {
+      //   this.refreshCohorts();
+      // }
 
       _.reverse(mongoResult);
       mongoResult.pop();
@@ -180,7 +180,7 @@ export class APIservice {
     address: string,
     limit: number,
     page: number,
-    order: string,
+    order: string
   ) {
     try {
       await Promise.all([this.connectToMongo(), this.connectToMoralis()]);
@@ -188,20 +188,20 @@ export class APIservice {
       const tr = (await wallets.count()) - 1;
       const mongoResult = await wallets
         .find({})
-        .select(['-_id'])
-        .sort({ blockLastSynced: 'desc' })
+        .select(["-_id"])
+        .sort({ blockLastSynced: "desc" })
         .lean();
 
       const now = new Date();
 
-      if (_.size(mongoResult) == 0) {
-        this.refreshTokenHolders();
-      } else if (
-        mongoResult[0]?.blockLastSynced + 10 <
-        Math.floor(now.getTime() / 1000)
-      ) {
-        this.refreshTokenHolders();
-      }
+      // if (_.size(mongoResult) == 0) {
+      //   this.refreshTokenHolders();
+      // } else if (
+      //   mongoResult[0]?.blockLastSynced + 10 <
+      //   Math.floor(now.getTime() / 1000)
+      // ) {
+      //   this.refreshTokenHolders();
+      // }
 
       _.reverse(mongoResult);
       mongoResult.pop();
@@ -218,17 +218,17 @@ export class APIservice {
       const tokenContract = new ethers.Contract(
         TOKEN_ADDRESS,
         contractAbi,
-        provider,
+        provider
       );
 
       const totalSupply = parseFloat(
-        ethers.utils.formatEther(await tokenContract.totalSupply()).toString(),
+        ethers.utils.formatEther(await tokenContract.totalSupply()).toString()
       );
 
       const cohortContract = new ethers.Contract(
         COHORT_ADDRESS,
         cohortAbi,
-        provider,
+        provider
       );
 
       const totalProposals = (await cohortContract.totalProposals()).toNumber();
@@ -258,10 +258,10 @@ export class APIservice {
       await this.writeWalletDataToMongo(walletData);
       const now = new Date();
       console.log(
-        '--> Token Holders refresed at Block : ',
+        "--> Token Holders refresed at Block : ",
         currentBlock,
-        ' and time : ',
-        Math.floor(now.getTime() / 1000),
+        " and time : ",
+        Math.floor(now.getTime() / 1000)
       );
     } catch (e) {
       console.log(e);
@@ -275,22 +275,22 @@ export class APIservice {
       const cohortAbi: ContractInterface = [
         {
           inputs: [],
-          name: 'totalCohorts',
-          outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-          stateMutability: 'view',
-          type: 'function',
+          name: "totalCohorts",
+          outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+          stateMutability: "view",
+          type: "function",
         },
         {
-          inputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-          name: 'cohortMap',
+          inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+          name: "cohortMap",
           outputs: [
-            { internalType: 'string', name: 'name', type: 'string' },
-            { internalType: 'address', name: 'admin', type: 'address' },
-            { internalType: 'bytes32', name: 'merkleRoot', type: 'bytes32' },
-            { internalType: 'bool', name: 'exists', type: 'bool' },
+            { internalType: "string", name: "name", type: "string" },
+            { internalType: "address", name: "admin", type: "address" },
+            { internalType: "bytes32", name: "merkleRoot", type: "bytes32" },
+            { internalType: "bool", name: "exists", type: "bool" },
           ],
-          stateMutability: 'view',
-          type: 'function',
+          stateMutability: "view",
+          type: "function",
         },
       ];
 
@@ -358,8 +358,8 @@ export class APIservice {
       // console.log('--> cohortMapResult : ', cohortMapResult);
 
       console.log(
-        '--> Cohorts refresed at time : ',
-        Math.floor(now.getTime() / 1000),
+        "--> Cohorts refresed at time : ",
+        Math.floor(now.getTime() / 1000)
       );
     } catch (e) {
       console.log(e);
@@ -388,7 +388,7 @@ export class APIservice {
         updateOne: {
           filter: { address: AddressZero },
           update: {
-            balance: '0',
+            balance: "0",
             blockLastSynced: Math.floor(now.getTime() / 1000),
           },
           upsert: true,
@@ -407,32 +407,32 @@ export class APIservice {
       const address = TOKEN_ADDRESS;
 
       const topic =
-        '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
       const abi = {
         anonymous: false,
         inputs: [
           {
             indexed: true,
-            internalType: 'address',
-            name: 'from',
-            type: 'address',
+            internalType: "address",
+            name: "from",
+            type: "address",
           },
           {
             indexed: true,
-            internalType: 'address',
-            name: 'to',
-            type: 'address',
+            internalType: "address",
+            name: "to",
+            type: "address",
           },
           {
             indexed: false,
-            internalType: 'uint256',
-            name: 'amount',
-            type: 'uint256',
+            internalType: "uint256",
+            name: "amount",
+            type: "uint256",
           },
         ],
-        name: 'Transfer',
-        type: 'event',
+        name: "Transfer",
+        type: "event",
       };
 
       const response = await Moralis.EvmApi.events.getContractEvents({
@@ -453,28 +453,6 @@ export class APIservice {
         }
       }
 
-      // const response =
-      //   await Moralis.EvmApi.transaction.getWalletTransactionsVerbose({
-      //     address,
-      //     chain,
-      //   });
-
-      // const resJSON = response.toJSON().result;
-
-      // for (let i = 0; i < _.size(resJSON); i++) {
-      //   for (let j = 0; j < _.size(resJSON[i].logs); j++) {
-      //     // if (resJSON[i]?.logs[j]['decoded_event'].label == 'Transfer')
-      //     for (
-      //       let k = 0;
-      //       k < _.size(resJSON[i]?.logs[j]['decoded_event']?.params);
-      //       k++
-      //     ) {
-      //       const value = resJSON[i]?.logs[j]['decoded_event'].params[k]?.value;
-      //       if (value != AddressZero && ethers.utils.isAddress(value))
-      //         toAddresses.push(value);
-      //     }
-      //   }
-      // }
       return toAddresses;
     } catch (e) {
       console.log(e);
@@ -492,7 +470,7 @@ export class APIservice {
   private async fillToAddressWithData(
     walletData: wallet[],
     toAddresses: string[],
-    currentBlock: number,
+    currentBlock: number
   ) {
     try {
       const promisList = [];
@@ -520,7 +498,7 @@ export class APIservice {
       const contract = new ethers.Contract(
         TOKEN_ADDRESS,
         contractAbi,
-        provider,
+        provider
       );
 
       const result = await contract.balanceOf(address);
@@ -528,7 +506,7 @@ export class APIservice {
       return ethers.utils.formatEther(result).toString();
     } catch (error: any) {
       //console.log('Contract does not have owner function');
-      return '0';
+      return "0";
     }
   }
 
@@ -536,20 +514,20 @@ export class APIservice {
     try {
       if (Moralis.Core.isStarted == false) {
         await Moralis.start({
-          apiKey: configService.getValue('MORALIS_KEY'),
+          apiKey: configService.getValue("MORALIS_KEY"),
         });
 
-        console.log('-> Moralis Reconnected');
+        console.log("-> Moralis Reconnected");
       }
     } catch (e) {
-      console.log('--> connectToMoralis error', e);
+      console.log("--> connectToMoralis error", e);
     }
   }
 
   private async connectToMongo() {
-    mongoose.set('strictQuery', true);
+    mongoose.set("strictQuery", true);
     mongoose
-      .connect(configService.getValue('MONGO_URL'), {
+      .connect(configService.getValue("MONGO_URL"), {
         useNewUrlParser: true,
         useUnifiedTopology: true,
       })
